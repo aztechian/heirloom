@@ -1,0 +1,52 @@
+version: "2"
+linters:
+  enable:
+    - canonicalheader
+    - cyclop
+    - dupl
+    - errcheck
+    - funcorder
+    - funlen
+    - gochecknoglobals
+    - gosec
+    - importas
+    - ineffassign
+    - interfacebloat
+    - misspell
+    - mnd
+    - nlreturn
+    - reassign
+    - varnamelen
+  settings:
+    nlreturn:
+      block-size: 5
+    varnamelen:
+      ignore-names:
+        - id
+        - ip
+        - db
+        - fs
+      ignore-decls:
+        - h http.Handler
+        - w http.ResponseWriter
+        - r *http.Request
+        - t testing.T
+  exclusions:
+    rules:
+      # Generated code is not ours to lint.
+      - path: internal/api/types/
+        linters:
+          - dupl
+          - funlen
+          - gochecknoglobals
+          - gosec
+          - lll
+          - mnd
+          - varnamelen
+formatters:
+  enable:
+    - gofmt
+    - goimports
+run:
+  tests: false
+  modules-download-mode: readonly

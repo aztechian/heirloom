@@ -1,0 +1,285 @@
+name: Test and Build
+
+# Scope note: this workflow covers what the repository actually contains today
+# -- module hygiene, code generation, lint, test, and cross-compilation. There
+# is deliberately no docker or release job yet, because there is no Dockerfile,
+# no frontend, and no cmd/server. A workflow that references files which do not
+# exist is broken CI that nobody notices is broken. Add those jobs with the
+# things they build.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    tags:
+      - v*
+
+# Cancel superseded runs for the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap checks that catch the failure modes that otherwise show up disguised
+  # as something else -- most notably a go.mod toolchain version that has
+  # drifted from .tool-versions, which makes CI pass while every contributor's
+  # local build fails for reasons that look like a code problem.
+  hygiene:
+    name: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Toolchain versions agree
+        run: |
+          mod_go="$(awk '/^go [0-9]/ {print $2}' go.mod)"
+          asdf_go="$(awk '/^golang /  {print $2}' .tool-versions)"
+          echo "go.mod: $mod_go / .tool-versions: $asdf_go"
+          if [ "$mod_go" != "$asdf_go" ]; then
+            echo "::error::go.mod requires Go $mod_go but .tool-versions pins $asdf_go"
+            exit 1
+          fi
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: go.mod is tidy
+        run: |
+          cp go.mod go.mod.orig
+          go mod tidy
+          diff -u go.mod.orig go.mod || {
+            echo "::error::go.mod is not tidy -- run 'make tidy' and commit the result"
+            exit 1
+          }
+
+  # The generated API code is not committed, so this job is the only thing
+  # standing between a spec that no longer generates and a confusing failure in
+  # every downstream job.
+  generate:
+    name: generate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Generate API types from the OpenAPI spec
+        run: make generate
+      # No artifact is published. Generation takes seconds and each downstream
+      # job regenerates from the spec, which keeps the spec as the single source
+      # of truth in CI as well as locally. This job exists so that a spec that
+      # no longer generates fails once, under an obvious name, instead of three
+      # times under misleading ones.
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    needs: [generate]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Generate API types
+        run: make generate
+
+      # The embed directive for the frontend needs its target to exist even
+      # when we are not building the frontend. Placeholder only -- CI must never
+      # be the only place a real build is exercised.
+      - name: Placeholder embed target
+        run: |
+          mkdir -p static
+          touch static/index.html
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          # go generate has to run first, so the action's own cache setup is
+          # disabled in favour of setup-go's.
+          skip-cache: true
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: [generate]
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install Go tools
+        run: go install tool
+
+      - name: Generate API types
+        run: make generate
+
+      - name: Placeholder embed target
+        run: |
+          mkdir -p static
+          touch static/index.html
+
+      - name: Test
+        run: make junit
+
+      # Public repository: Codecov's tokenless upload works from GitHub Actions,
+      # so there is no CODECOV_TOKEN secret here. That secret is only required
+      # for private repositories.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+
+      # Also fine without indirection on a public repo: the workflow_run
+      # trampoline this action documents is needed for private repos and
+      # fork PRs, which do not apply to pushes and PRs within this repo.
+      - name: Publish test results
+        if: ${{ !cancelled() }}
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: report.xml
+
+      - name: Save test artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: |
+            coverage.out
+            report.xml
+          if-no-files-found: warn
+
+  # The Postgres dialect is not implemented in the application -- store.Open
+  # refuses it -- but its migrations are real and run here against a real server.
+  # This job is the entire reason keeping the second dialect open is cheap rather
+  # than aspirational: an untested dialect is just a comment, and the drift it
+  # catches (a migration added to one dialect with SQL the other rejects) is
+  # invisible to every other job.
+  #
+  # Deliberately a separate job rather than a matrix leg on `test`: the two legs
+  # would collide on the coverage.out/report.xml artifact names and the test-result
+  # publisher would post twice. Split it back into `test` once there is a Postgres
+  # query layer worth measuring coverage on.
+  migrations-postgres:
+    name: migrations (postgres)
+    runs-on: ubuntu-latest
+    # Intentionally no `needs: [generate]`: this job does not touch generated
+    # code, so gating it on generation would only delay feedback.
+    services:
+      postgres:
+        # Pinned to a major version rather than `latest`, so a Postgres release
+        # cannot break CI on an unrelated commit.
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: heirloom
+          POSTGRES_USER: heirloom
+          POSTGRES_DB: heirloom
+        ports:
+          - 5432:5432
+        # Without a health check the job races the container's startup and fails
+        # intermittently on connection refused.
+        options: >-
+          --health-cmd "pg_isready -U heirloom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # No `make generate` here: internal/store imports nothing from
+      # internal/api/types, so generating would be pure latency.
+      - name: Download modules
+        run: go mod download
+
+      # -count=1 defeats the test cache: this test's result depends on a service
+      # container, not only on the source, so a cached pass would be a lie.
+      - name: Apply and verify Postgres migrations
+        env:
+          HEIRLOOM_TEST_POSTGRES_DSN: postgres://heirloom:heirloom@localhost:5432/heirloom?sslmode=disable
+        run: go test -count=1 -v -run 'TestPostgresMigrate|TestMigrationParity' ./internal/store/...
+
+  # Supported targets are linux/amd64 and linux/arm64 only. Each builds on a
+  # runner of its own architecture rather than cross-compiling, which is the
+  # decision that makes cgo cheap: no cross-toolchain, no QEMU, and adding a
+  # cgo dependency becomes a one-line change to CGO_ENABLED below instead of a
+  # CI rework. See the cgo open decision in the project README.
+  #
+  # UNVERIFIED: the `ubuntu-24.04-arm` label is arm64 hosted runners, which are
+  # free for public repositories. This has not been confirmed against current
+  # GitHub documentation. If the arm leg fails to schedule, either drop to
+  # `ubuntu-latest` with QEMU via docker/setup-qemu-action, or cross-compile
+  # that leg while CGO_ENABLED stays 0.
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    needs: [generate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-24.04
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Generate API types
+        run: make generate
+
+      - name: Placeholder embed target
+        run: |
+          mkdir -p static
+          touch static/index.html
+
+      # Builds every package rather than `make all`, because there is no
+      # cmd/server yet. Swap to the binary target -- and to uploading it -- when
+      # there is something to upload.
+      #
+      # CGO_ENABLED stays 0 while nothing requires cgo: it keeps the image
+      # small and the binary free of runtime library dependencies. Because each
+      # arch builds natively, flipping this to 1 needs no other change here.
+      - name: Compile
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build ./...
+
+  # Single required status check, so branch protection does not have to enumerate
+  # every matrix leg.
+  result:
+    name: CI Result
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [hygiene, generate, lint, test, migrations-postgres, build]
+    steps:
+      - name: Fail if any job did not succeed
+        if: >-
+          ${{
+               contains(needs.*.result, 'failure')
+            || contains(needs.*.result, 'cancelled')
+            || contains(needs.*.result, 'skipped')
+          }}
+        run: exit 1

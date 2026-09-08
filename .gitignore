@@ -1,0 +1,28 @@
+# Build output
+/heirloom
+/static/
+/coverage.out
+/coverage.html
+/report.xml
+
+# Local runtime data -- never commit an archive's contents or database
+/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# Local configuration, which may contain storage or model credentials
+/config.yaml
+.env
+.env.local
+
+# Node
+frontend/node_modules/
+
+# Editors and OS
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json

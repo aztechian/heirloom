@@ -1,0 +1,913 @@
+openapi: 3.0.3
+info:
+  title: Heirloom API
+  version: 0.1.0
+  description: |
+    API for Heirloom, a self-hostable family archive.
+
+    Heirloom catalogs scanned photographs and documents and records what is known
+    about them as **assertions** — claims with an author, a basis, and a
+    confirmation state — rather than as flat fields. This version covers only the
+    foundation: creating a collection, and getting scanned material into it.
+
+    ## Collections
+
+    A collection is the isolation boundary. Every asset, person, and assertion
+    belongs to exactly one collection. A single-family self-hosted instance is
+    simply an instance with one collection; nothing about the code path differs.
+
+    ## Content identity and deduplication
+
+    An asset's identity is the pair (`collectionId`, `contentHash`), where
+    `contentHash` is the SHA-256 of the source bytes. Deduplication is therefore
+    **scoped to a collection**: identical bytes uploaded to two different
+    collections produce two distinct assets, because two families may
+    legitimately hold the same photograph and neither should learn about the
+    other.
+
+    Re-uploading content already present in a collection returns `200` with the
+    existing asset rather than `201` with a new one, which makes bulk ingest
+    scripts safe to retry.
+
+    ## Ingest is asynchronous
+
+    Uploading stores the bytes and returns. Derivative generation, OCR, face
+    detection, and embedding happen in background jobs. An asset's `status`
+    reflects its position in that pipeline; clients must not assume derivatives
+    or extracted metadata exist at upload time.
+
+    ## Errors
+
+    Errors use `application/problem+json` (RFC 9457). Clients should branch on
+    the HTTP status and the `type` field, never on the prose in `detail`. This
+    includes errors produced by request binding before a handler runs — the
+    server's error handler is required to emit problem documents so that clients
+    never have to parse two error formats.
+
+    ## Constraint enforcement
+
+    The `pattern`, `minLength`, `maxLength`, `minimum`, and `maximum` keywords in
+    this document are **contract, not generated code**. The Go generator produces
+    no validation from them, so handlers are responsible for enforcing every one
+    and returning `422` on violation. Treat any constraint here as a handler
+    obligation.
+
+    ## Authentication
+
+    **Not implemented in this version.** The security schemes below are declared
+    to fix the shape of the eventual contract. Until operator authentication
+    ships, an instance exposes an unauthenticated write API and must not be
+    reachable from the public internet. See `api/README.md`.
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Instance
+    description: Instance-level capabilities and limits
+  - name: Collections
+    description: Creating and inspecting collections, the archive's isolation boundary
+  - name: Assets
+    description: Uploading and inspecting scanned source material
+
+security:
+  - operatorSession: []
+
+paths:
+  /api/v1/instance:
+    get:
+      summary: Get instance limits and capabilities
+      description: |
+        Returns the limits a client needs before attempting an upload. A bulk
+        ingest tool should read this first rather than discovering the maximum
+        asset size by getting a `413` partway through a 200 MB transfer.
+      operationId: getInstance
+      tags: [Instance]
+      responses:
+        '200':
+          description: Instance information retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceInfo'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        default:
+          $ref: '#/components/responses/Unexpected'
+
+  /api/v1/collections:
+    get:
+      summary: List collections
+      description: |
+        Returns collections visible to the caller. On a single-family instance
+        this is expected to return exactly one.
+      operationId: listCollections
+      tags: [Collections]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Collections retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        default:
+          $ref: '#/components/responses/Unexpected'
+    post:
+      summary: Create a collection
+      description: |
+        Creates a new collection. The `slug` appears in human-facing URLs and
+        must be unique on the instance; if omitted it is derived from `name`.
+      operationId: createCollection
+      tags: [Collections]
+      security:
+        - operatorSession: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCollectionRequest'
+      responses:
+        '201':
+          description: Collection created
+          headers:
+            Location:
+              description: URL of the created collection
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Collection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: A collection with this slug already exists
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        default:
+          $ref: '#/components/responses/Unexpected'
+
+  /api/v1/collections/{collectionId}:
+    parameters:
+      - $ref: '#/components/parameters/CollectionId'
+    get:
+      summary: Get a collection
+      operationId: getCollection
+      tags: [Collections]
+      responses:
+        '200':
+          description: Collection retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Collection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        default:
+          $ref: '#/components/responses/Unexpected'
+
+  /api/v1/collections/{collectionId}/assets:
+    parameters:
+      - $ref: '#/components/parameters/CollectionId'
+    get:
+      summary: List assets in a collection
+      description: |
+        Filters are applied before pagination, so a page contains up to `limit`
+        matching assets. Changing `status`, `kind`, or `limit` while paginating
+        invalidates the cursor: a cursor is only valid for the exact query that
+        produced it, and reusing it with different filters returns `400`.
+      operationId: listAssets
+      tags: [Assets]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: |
+            Filter by ingest pipeline status. Values outside the enumeration are
+            rejected with `422`; the generated code does not check membership,
+            so the handler must.
+          required: false
+          schema:
+            $ref: '#/components/schemas/AssetStatus'
+        - name: kind
+          in: query
+          description: |
+            Filter by asset kind. Values outside the enumeration are rejected
+            with `422`.
+          required: false
+          schema:
+            $ref: '#/components/schemas/AssetKind'
+      responses:
+        '200':
+          description: Assets retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        default:
+          $ref: '#/components/responses/Unexpected'
+    post:
+      summary: Upload a scanned asset
+      description: |
+        Uploads one source file into the collection. The request body is
+        `multipart/form-data`; the bytes are streamed through the application to
+        the configured storage backend rather than buffered in memory.
+
+        ## Part ordering is part of the contract
+
+        Non-file parts (`sha256`, `originalPath`, `sensitivity`) **must precede**
+        the `file` part. The server reads parts in order and streams `file`
+        straight to storage, so a metadata part arriving after the file cannot be
+        applied without buffering the file — which defeats the point. Parts out
+        of order are rejected with `422`.
+
+        Exactly one `file` part is permitted. A second `file` part, or any part
+        not named above, is rejected with `422` rather than ignored, so that a
+        client typo fails loudly instead of silently dropping metadata.
+
+        ## Outcomes
+
+        - `201 Created` — the content was new and an asset was created.
+        - `200 OK` — an asset with identical content already exists in this
+          collection. The existing asset is returned **entirely unchanged** and
+          no `Location` header is sent. Metadata supplied with the duplicate
+          request, including `sensitivity` and `originalPath`, is **discarded**;
+          use `PATCH` on the returned asset to apply it. This asymmetry is
+          deliberate — an upload is not an update — but it means a client that
+          re-uploads material as `restricted` must check the status code and
+          follow up.
+
+        If `sha256` is supplied, the server verifies it against the received
+        bytes and rejects a mismatch with `422`, which catches truncated or
+        corrupted transfers. Supplying it is recommended for bulk ingest.
+
+        Ingest work is asynchronous. A successful response means the bytes are
+        durably stored, not that the asset has been processed.
+      operationId: uploadAsset
+      tags: [Assets]
+      security:
+        - operatorSession: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadAssetRequest'
+      responses:
+        '201':
+          description: Asset created from new content
+          headers:
+            Location:
+              description: URL of the created asset
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        '200':
+          description: |
+            Identical content already present in this collection. The existing
+            asset is returned; nothing was created or modified, and supplied
+            metadata was discarded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: |
+            Upload exceeds `maxAssetBytes` for this instance, discoverable via
+            `GET /api/v1/instance`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: |
+            The file's media type is not accepted. The type detected from content
+            is authoritative; a client-declared type that disagrees with the
+            bytes is rejected. Accepted types are listed by
+            `GET /api/v1/instance`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: |
+            Storage backend is unavailable or out of space. Retry after the
+            interval in `Retry-After`, if present.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+                format: int32
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        default:
+          $ref: '#/components/responses/Unexpected'
+
+  /api/v1/collections/{collectionId}/assets/{assetId}:
+    parameters:
+      - $ref: '#/components/parameters/CollectionId'
+      - $ref: '#/components/parameters/AssetId'
+    get:
+      summary: Get an asset
+      description: |
+        Returns the asset's metadata.
+
+        Assets are nested under their collection so that every access carries its
+        authorization scope in the path; there is deliberately no instance-wide
+        `/assets/{id}` route. An asset that exists but belongs to a different
+        collection returns `404`, never `403` — a `403` would confirm the
+        asset's existence to a caller scoped to another family's collection.
+      operationId: getAsset
+      tags: [Assets]
+      responses:
+        '200':
+          description: Asset retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        default:
+          $ref: '#/components/responses/Unexpected'
+    patch:
+      summary: Correct an asset's classification
+      description: |
+        Updates the operator-correctable fields on an asset. Only fields present
+        in the request body are changed.
+
+        This exists primarily so `sensitivity` can be raised after the fact.
+        Material is routinely recognized as private only once someone looks at
+        it, and the upload path cannot set it on a deduplicated re-upload, so
+        without this endpoint anything ingested as `normal` would be permanently
+        shareable. `kind` is correctable for the same reason: content detection
+        will misclassify a photographed document as a photo.
+
+        Immutable by design and therefore not accepted here: `contentHash`,
+        `sizeBytes`, `mediaType`, `collectionId`, and the upload timestamps.
+      operationId: updateAsset
+      tags: [Assets]
+      security:
+        - operatorSession: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssetRequest'
+      responses:
+        '200':
+          description: Asset updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        default:
+          $ref: '#/components/responses/Unexpected'
+
+components:
+  parameters:
+    CollectionId:
+      name: collectionId
+      in: path
+      required: true
+      description: UUID of the collection
+      schema:
+        type: string
+        format: uuid
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      description: UUID of the asset
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: |
+        Maximum number of items to return. Defaults to 50 when omitted and is
+        clamped to 200; the generator does not apply the default or the bounds,
+        so the handler must. A page may contain fewer items than `limit` even
+        when more pages remain.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 200
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        Opaque pagination cursor from a previous response's `nextCursor`.
+        Cursors are opaque by contract; clients must not construct or parse them.
+        A cursor is bound to the query that produced it — reusing one with
+        different filters or a different `limit`, or supplying a malformed or
+        expired cursor, returns `400`.
+      schema:
+        type: string
+        maxLength: 512
+
+  responses:
+    BadRequest:
+      description: |
+        The request was malformed — an unparseable body, a path parameter that is
+        not a UUID, or an invalid pagination cursor.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: |
+        The referenced resource does not exist, or exists in a collection the
+        caller is not scoped to. These cases are deliberately indistinguishable.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ValidationFailed:
+      description: |
+        The request was well-formed but violated a documented constraint. The
+        `errors` array identifies the offending fields.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalError:
+      description: An unexpected server error occurred
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unexpected:
+      description: |
+        Any status not enumerated for this operation. Present so that a typed
+        client can represent responses added in a later version without failing
+        to decode them.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: |
+            Stable identifier for the problem kind. Clients should branch on
+            this rather than on `detail`.
+          example: "https://heirloom.invalid/problems/slug-conflict"
+        title:
+          type: string
+          description: Short, human-readable summary of the problem kind
+          example: "Slug already in use"
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code, repeated for convenience
+          example: 409
+        detail:
+          type: string
+          description: |
+            Explanation specific to this occurrence. Human-facing prose; not
+            guaranteed stable across versions.
+          example: "A collection with slug 'nielsen-estate' already exists."
+        instance:
+          type: string
+          format: uri-reference
+          description: URI reference identifying this specific occurrence
+          example: "/api/v1/collections"
+        errors:
+          type: array
+          description: Field-level problems, present on validation failures
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      required:
+        - field
+        - message
+      properties:
+        field:
+          type: string
+          description: JSON pointer or multipart part name the problem applies to
+          example: "/slug"
+        message:
+          type: string
+          description: What is wrong with this field
+          example: "must contain only lowercase letters, digits, and hyphens"
+
+    InstanceInfo:
+      type: object
+      required:
+        - version
+        - maxAssetBytes
+        - acceptedMediaTypes
+        - authenticationEnabled
+      properties:
+        version:
+          type: string
+          description: Build version of the running instance
+          example: "0.1.0"
+        maxAssetBytes:
+          type: integer
+          format: int64
+          description: |
+            Largest single upload this instance accepts. Exceeding it yields
+            `413`.
+          example: 536870912
+        acceptedMediaTypes:
+          type: array
+          description: |
+            Media types accepted for upload, as detected from content. A type
+            absent from this list yields `415`.
+          items:
+            type: string
+          example:
+            - "image/jpeg"
+            - "image/png"
+            - "image/tiff"
+            - "image/webp"
+            - "application/pdf"
+        authenticationEnabled:
+          type: boolean
+          description: |
+            Whether operator authentication is enforced. When `false`, this
+            instance accepts unauthenticated writes and must not be exposed to
+            an untrusted network. Reported so that a client, a health check, or
+            a first-run wizard can warn loudly rather than relying on the
+            operator having read the documentation.
+          example: false
+
+    Page:
+      type: object
+      description: Cursor pagination envelope.
+      required:
+        - nextCursor
+      properties:
+        nextCursor:
+          type: string
+          nullable: true
+          description: |
+            Cursor for the next page, or `null` when this is the last page. The
+            field is always present. A `null` value is the only reliable
+            end-of-list signal; a page shorter than `limit` is not.
+          example: "eyJhZnRlciI6IjE5NTItMDQtMTMifQ"
+
+    CreateCollectionRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Human-readable name for the collection
+          example: "Nielsen Family Estate"
+        slug:
+          type: string
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          minLength: 1
+          maxLength: 64
+          description: |
+            URL-safe unique identifier. Derived from `name` when omitted.
+            Immutable once set, because it appears in shared links.
+          example: "nielsen-estate"
+        description:
+          type: string
+          maxLength: 2000
+          description: Optional notes about the collection's provenance or scope
+          example: "Contents of the hall closet at 412 Pine, inherited 2026."
+
+    Collection:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "3f2a7c1e-9b4d-4a6f-8e21-5c7d0b9a1234"
+        name:
+          type: string
+          example: "Nielsen Family Estate"
+        slug:
+          type: string
+          example: "nielsen-estate"
+        description:
+          type: string
+          example: "Contents of the hall closet at 412 Pine, inherited 2026."
+        assetCount:
+          type: integer
+          format: int64
+          description: |
+            Number of assets currently in the collection. Advisory: it may lag
+            in-flight uploads and must not be used as a completion signal.
+          example: 3412
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-09-07T18:22:04Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-09-07T18:22:04Z"
+
+    CollectionList:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          required:
+            - collections
+          properties:
+            collections:
+              type: array
+              items:
+                $ref: '#/components/schemas/Collection'
+
+    AssetKind:
+      type: string
+      description: |
+        Broad classification of what the file is, which selects the ingest
+        pipeline. Detected from content on upload; correctable via `PATCH`,
+        because detection will misread photographed documents.
+      enum:
+        - photo
+        - document
+        - unknown
+      example: photo
+
+    AssetStatus:
+      type: string
+      description: |
+        Position in the ingest pipeline.
+
+        - `pending` — bytes stored, no processing started
+        - `processing` — derivatives, OCR, or face detection in progress
+        - `ready` — pipeline complete for this asset's kind
+        - `failed` — processing failed; see `error`. The source bytes are still
+          retained and processing can be retried. Processing failure must never
+          lose source material.
+      enum:
+        - pending
+        - processing
+        - ready
+        - failed
+      example: pending
+
+    Sensitivity:
+      type: string
+      description: |
+        Controls eligibility for inclusion in anything reachable by a share
+        token. `restricted` assets are never exposed through a shared view,
+        regardless of that token's grant. Defaults to `normal` when omitted on
+        upload; the generator does not apply schema defaults, so the handler must.
+      enum:
+        - normal
+        - restricted
+      default: normal
+      example: normal
+
+    UploadAssetRequest:
+      type: object
+      description: |
+        Multipart form body. Non-file parts must precede the `file` part; see the
+        operation description.
+      required:
+        - file
+      properties:
+        sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: |
+            Lowercase hex SHA-256 of the file contents. Optional but recommended
+            for bulk ingest: the server verifies it and rejects a mismatch,
+            catching truncated transfers that would otherwise be stored as
+            silently corrupt assets. Must appear before the `file` part.
+          example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        originalPath:
+          type: string
+          maxLength: 4096
+          pattern: '^(?:[^/\x00]+/)*[^/\x00]+$'
+          description: |
+            The file's path in the source medium, relative to the ingest root
+            (for example `Box 3/Album 2/img_0417.tif`). Must be relative, and
+            must not contain an empty segment, a leading `/`, a NUL byte, or a
+            `.` or `..` segment. It is stored as provenance and never used to
+            construct a filesystem path, but constraining it now avoids handing
+            a traversal primitive to whatever consumes it later.
+
+            The `pattern` below covers separators, empty segments, and NUL only.
+            Rejecting `.` and `..` segments cannot be expressed readably in a
+            pattern the Go generator's regexp engine accepts — RE2 has no
+            negative lookahead — so **that check is the handler's, not the
+            schema's**, and must not be skipped.
+
+            Recorded verbatim. Nothing reads it yet; capture it anyway, because
+            scan folder structure is frequently the only surviving record of how
+            an album or box was organized.
+          example: "Box 3/Album 2/img_0417.tif"
+        sensitivity:
+          $ref: '#/components/schemas/Sensitivity'
+        file:
+          type: string
+          format: binary
+          description: The source file. Exactly one `file` part per request.
+
+    UpdateAssetRequest:
+      type: object
+      description: |
+        Partial update. Omitted fields are left unchanged; explicit `null` is not
+        accepted as a way to clear a field.
+      minProperties: 1
+      properties:
+        sensitivity:
+          $ref: '#/components/schemas/Sensitivity'
+        kind:
+          $ref: '#/components/schemas/AssetKind'
+
+    Asset:
+      type: object
+      required:
+        - id
+        - collectionId
+        - contentHash
+        - originalFilename
+        - mediaType
+        - sizeBytes
+        - kind
+        - status
+        - sensitivity
+        - uploadedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "b71c9d84-2e5f-4c3a-9d18-6f4e2a7b0c55"
+        collectionId:
+          type: string
+          format: uuid
+          example: "3f2a7c1e-9b4d-4a6f-8e21-5c7d0b9a1234"
+        contentHash:
+          type: string
+          description: |
+            Lowercase hex SHA-256 of the source bytes. Together with
+            `collectionId` this forms the asset's identity and the basis for
+            deduplication within the collection. Source bytes are never modified
+            in place, so this value is stable for the asset's lifetime; extracted
+            metadata is published to sidecar files instead.
+          pattern: '^[a-f0-9]{64}$'
+          example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        originalFilename:
+          type: string
+          maxLength: 255
+          description: |
+            Filename from the `file` part, sanitized for storage safety: path
+            separators and control characters removed, length truncated. The
+            sanitized form is what is returned.
+          example: "img_0417.tif"
+        originalPath:
+          type: string
+          description: Source-medium path as supplied at upload, if any
+          example: "Box 3/Album 2/img_0417.tif"
+        mediaType:
+          type: string
+          description: |
+            Media type detected from the file's contents, not from the
+            client-declared `Content-Type`.
+          example: "image/tiff"
+        sizeBytes:
+          type: integer
+          format: int64
+          example: 184320000
+        kind:
+          $ref: '#/components/schemas/AssetKind'
+        status:
+          $ref: '#/components/schemas/AssetStatus'
+        sensitivity:
+          $ref: '#/components/schemas/Sensitivity'
+        error:
+          type: string
+          description: Reason processing failed. Present only when `status` is `failed`.
+          example: "OCR engine exited with status 1"
+        uploadedAt:
+          type: string
+          format: date-time
+          example: "2026-09-07T18:24:51Z"
+        processedAt:
+          type: string
+          format: date-time
+          description: When the ingest pipeline last completed for this asset
+          example: "2026-09-07T18:26:03Z"
+
+    AssetList:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          required:
+            - assets
+          properties:
+            assets:
+              type: array
+              items:
+                $ref: '#/components/schemas/Asset'
+
+  securitySchemes:
+    operatorSession:
+      type: apiKey
+      in: cookie
+      name: heirloom_session
+      description: |
+        Session cookie for the archivist operating the instance. **Not yet
+        implemented**, and the generator produces no enforcement from this
+        declaration in any case — it documents the contract's shape. See
+        `api/README.md` for the consequences of running without it.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: |
+        CSRF token required on state-changing requests once cookie-based
+        operator sessions are in place. Applied per-operation rather than
+        globally, so that read operations do not appear to require it.
+        **Not yet implemented.**

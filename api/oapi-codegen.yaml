@@ -1,0 +1,43 @@
+# Generator configuration for api/openapi.yaml.
+# Output: internal/api/types/generated.go (not committed -- see api/README.md).
+package: types
+
+generate:
+  # Request/response structs and enum constants.
+  models: true
+
+  # Embeds the spec in the binary so a running instance can serve its own
+  # contract. Cheap, and it removes any question of which version an instance
+  # implements when someone else is self-hosting it.
+  embedded-spec: true
+
+  # gorilla/mux rather than net/http's ServeMux. Go 1.22+ patterns would cover
+  # the routing here, but the reference project for this repo's layout
+  # already uses mux subrouters and middleware chaining; matching it keeps
+  # routes.go/handlers.go looking the same across both projects.
+  gorilla-server: true
+
+  # Strict mode: handlers take typed request structs and return typed responses,
+  # so a spec change that a handler does not satisfy fails to compile. This is
+  # the whole point of generating rather than hand-writing.
+  #
+  # It does NOT hold for uploadAsset. A multipart body has no typed request
+  # struct, so that handler reads the body itself and the compiler cannot check
+  # it against the spec. Expect the generated signature to carry a
+  # *multipart.Reader -- this is the documented behavior but has not been
+  # verified against this spec on a working toolchain. If it turns out to fight
+  # the streaming path, uncomment exclude-operation-ids below and hand-write
+  # that one handler; everything else stays checked.
+  strict-server: true
+
+output-options:
+  skip-fmt: false
+  skip-prune: false
+  # exclude-operation-ids:
+  #   - uploadAsset
+
+compatibility:
+  # Prefixes enum constants with their schema name, so Sensitivity and
+  # AssetStatus cannot collide and a reader can tell which enum a constant
+  # belongs to at the use site.
+  always-prefix-enum-values: true

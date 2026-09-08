@@ -1,0 +1,14 @@
+{
+  "features": {
+    "ghcr.io/devcontainers-extra/features/asdf-package:1": {
+      "version": "1.0.10",
+      "resolved": "ghcr.io/devcontainers-extra/features/asdf-package@sha256:109f8d310417ee982eb6fb89bfe027a0353f2b9aea010a3019d6efd3f7ffc284",
+      "integrity": "sha256:109f8d310417ee982eb6fb89bfe027a0353f2b9aea010a3019d6efd3f7ffc284"
+    },
+    "ghcr.io/devcontainers-extra/features/node-asdf:0": {
+      "version": "0.0.2",
+      "resolved": "ghcr.io/devcontainers-extra/features/node-asdf@sha256:413daa93c0bb7ae76a924f51283a65eca3af3a141984f42fe798b3fe445ece71",
+      "integrity": "sha256:413daa93c0bb7ae76a924f51283a65eca3af3a141984f42fe798b3fe445ece71"
+    }
+  }
+}

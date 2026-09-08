@@ -1,0 +1,11 @@
+{
+    "recommendations": [
+        "ms-azuretools.vscode-containers",
+        "ms-vscode.makefile-tools",
+        "davidanson.vscode-markdownlint",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "github.vscode-pull-request-github",
+        "golang.go",
+        "msjsdiag.vscode-react-native"
+    ]
+}
