@@ -17,8 +17,17 @@ type ServerConfig struct {
 	WriteTimeout int    `mapstructure:"write_timeout"`
 }
 
+type S3Config struct {
+	Bucket          string `mapstructure:"bucket"`
+	Region          string `mapstructure:"region"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+	Endpoint        string `mapstructure:"endpoint"`
+}
+
 type Config struct {
 	Server ServerConfig `mapstructure:"server"`
+	S3     S3Config     `mapstructure:"s3"`
 }
 
 func LoadConfig() (*Config, error) {

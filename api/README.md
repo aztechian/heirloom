@@ -128,6 +128,14 @@ Two constraints already visible in the schema anticipate the eventual model. `se
 5. Register the module's routes on the mux the generated `HandlerFromMux` is given. Paths in the spec already include the `/api/v1` prefix, so do **not** mount them under an `/api/v1` subrouter as well; that yields `/api/v1/api/v1/collections`.
 6. `make lint test`.
 
+Step 5's warning is about mux *nesting*, not about scoping middleware to API routes — those are different problems with different fixes. Do not reach for a subrouter to get API-only middleware; use `StdHTTPServerOptions.Middlewares` instead (see below).
+
+### API-only middleware, without a subrouter
+
+It's tempting to mount the generated handler under an `/api/v1/` subrouter specifically so API-only middleware (auth, CSRF, rate limiting) can wrap it without also running on static/UI routes. Don't: the generated handler already registers the full `/api/v1/...` paths on whatever mux it's given, so nesting it under another mux mounted at that same prefix duplicates it, exactly as step 5 says.
+
+The generator gives you the scoping mechanism directly: `HandlerWithOptions(si, StdHTTPServerOptions{BaseRouter: mux, Middlewares: []MiddlewareFunc{...}})` wraps *each generated operation handler* individually with the given middlewares before registering it on `BaseRouter`, then registers the routes on that same top-level `mux` used for static files and `/healthz`. Global, cross-cutting middleware (request ID, logging, recovery) stays in `applyGlobalMiddleware`; anything that must never touch static assets goes in `Middlewares` instead. No path nesting, no double prefix.
+
 Step 2 is what tells you what step 3 has to satisfy — for every operation except `uploadAsset`, a spec change you forget to implement fails the build rather than drifting quietly. For `uploadAsset`, write the test.
 
 ## Known-unverified

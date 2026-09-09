@@ -11,11 +11,8 @@ generate:
   # implements when someone else is self-hosting it.
   embedded-spec: true
 
-  # gorilla/mux rather than net/http's ServeMux. Go 1.22+ patterns would cover
-  # the routing here, but the reference project for this repo's layout
-  # already uses mux subrouters and middleware chaining; matching it keeps
-  # routes.go/handlers.go looking the same across both projects.
-  gorilla-server: true
+  # Use the standard HTTP server instead of the default one, and generate handlers compatible with it.
+  std-http-server: true
 
   # Strict mode: handlers take typed request structs and return typed responses,
   # so a spec change that a handler does not satisfy fails to compile. This is
