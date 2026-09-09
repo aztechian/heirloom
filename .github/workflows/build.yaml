@@ -50,6 +50,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The generated (uncommitted) API code is the only thing that imports
+      # github.com/oapi-codegen/runtime, and the generator itself is a `tool`
+      # dependency. Without generating first, go mod tidy sees both as unused
+      # and strips them, failing this check on every run regardless of
+      # whether go.mod is actually tidy.
+      - name: Generate API types
+        run: make generate
+
       - name: go.mod is tidy
         run: |
           cp go.mod go.mod.orig
