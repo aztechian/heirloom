@@ -11,6 +11,7 @@ func applyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("GET /openapi.json", openapiSpec)
 	mux.Handle("GET /docs/", http.StripPrefix("/docs", swaggerUI()))
+	types.HandlerFromMux(types.NewStrictHandler(apiHandlers{}, nil), mux)
 	mux.Handle("/", static.FileServer())
 }
 
