@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 
 	static "github.com/aztechian/heirloom"
@@ -11,7 +12,21 @@ func applyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("GET /openapi.json", openapiSpec)
 	mux.Handle("GET /docs/", http.StripPrefix("/docs", swaggerUI()))
-	types.HandlerFromMux(types.NewStrictHandler(apiHandlers{}, nil), mux)
+
+	spec, err := types.GetSpec()
+	if err != nil {
+		// The spec is embedded at build time, so a load failure here means
+		// the binary itself is broken, not a condition to recover from.
+		panic(fmt.Sprintf("failed to load embedded OpenAPI spec: %v", err))
+	}
+
+	// Request validation runs only in front of the generated API routes, so
+	// it never gets a chance to reject requests for /healthz, /docs, or the
+	// static frontend, none of which the spec describes.
+	apiMux := http.NewServeMux()
+	types.HandlerFromMux(types.NewStrictHandler(apiHandlers{}, nil), apiMux)
+	mux.Handle("/api/v1/", requestValidation(spec)(apiMux))
+
 	mux.Handle("/", static.FileServer())
 }
 

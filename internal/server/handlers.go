@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -11,22 +10,17 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
-	MaxNameLength        = 256
-	MaxSlugLength        = 64
-	MaxDescriptionLength = 2000
-)
+const MaxSlugLength = 64
 
 // apiHandlers implements types.StrictServerInterface. Storage, so every
 // method below except CreateCollection is a placeholder until a persistence
 // layer exists to back it.
 type apiHandlers struct{}
 
-var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-
 // slugify derives a URL-safe slug from a collection name: lowercased, with
 // runs of anything other than a-z0-9 collapsed to a single hyphen, and
-// leading/trailing hyphens trimmed.
+// leading/trailing hyphens trimmed. The result always satisfies the spec's
+// slug pattern; only its length still needs checking by the caller.
 func slugify(name string) string {
 	var b strings.Builder
 	prevHyphen := false
@@ -40,11 +34,13 @@ func slugify(name string) string {
 			prevHyphen = true
 		}
 	}
+
 	return strings.TrimSuffix(b.String(), "-")
 }
 
 func problem(status int, title, detail string) types.Problem {
 	return types.Problem{
+		//nolint:gosec // status is always an http.Status* constant, well within int32 range
 		Status: int32(status),
 		Title:  title,
 		Detail: &detail,
@@ -60,33 +56,23 @@ func (apiHandlers) CreateCollection(_ context.Context, request types.CreateColle
 		}, nil
 	}
 
+	// name/slug/description constraints from the spec (length, pattern) are
+	// enforced by request validation middleware before this handler runs.
 	name := strings.TrimSpace(request.Body.Name)
-	if len(name) < 1 || len(name) > MaxNameLength {
-		return types.CreateCollection422ApplicationProblemPlusJSONResponse{
-			ValidationFailedApplicationProblemPlusJSONResponse: types.ValidationFailedApplicationProblemPlusJSONResponse(
-				problem(http.StatusUnprocessableEntity, "Validation failed", "name must be between 1 and 256 characters."),
-			),
-		}, nil
-	}
 
-	slug := slugify(name)
-	if request.Body.Slug != nil {
-		slug = *request.Body.Slug
-	}
-	if len(slug) < 1 || len(slug) > MaxSlugLength || !slugPattern.MatchString(slug) {
-		return types.CreateCollection422ApplicationProblemPlusJSONResponse{
-			ValidationFailedApplicationProblemPlusJSONResponse: types.ValidationFailedApplicationProblemPlusJSONResponse(
-				problem(http.StatusUnprocessableEntity, "Validation failed", "slug must match ^[a-z0-9]+(?:-[a-z0-9]+)*$ and be 1-64 characters."),
-			),
-		}, nil
-	}
-
-	if request.Body.Description != nil && len(*request.Body.Description) > MaxDescriptionLength {
-		return types.CreateCollection422ApplicationProblemPlusJSONResponse{
-			ValidationFailedApplicationProblemPlusJSONResponse: types.ValidationFailedApplicationProblemPlusJSONResponse(
-				problem(http.StatusUnprocessableEntity, "Validation failed", "description must be at most 2000 characters."),
-			),
-		}, nil
+	slug := request.Body.Slug
+	if slug == nil {
+		// A slug derived from name bypasses the middleware's validation of
+		// client-supplied slugs, so its length is still this handler's problem.
+		derived := slugify(name)
+		if len(derived) < 1 || len(derived) > MaxSlugLength {
+			return types.CreateCollection422ApplicationProblemPlusJSONResponse{
+				ValidationFailedApplicationProblemPlusJSONResponse: types.ValidationFailedApplicationProblemPlusJSONResponse(
+					problem(http.StatusUnprocessableEntity, "Validation failed", "name does not derive a usable slug; provide one explicitly."),
+				),
+			}, nil
+		}
+		slug = &derived
 	}
 
 	// TODO: persist via the store layer once it exists, mapping a UNIQUE(slug)
@@ -98,7 +84,7 @@ func (apiHandlers) CreateCollection(_ context.Context, request types.CreateColle
 	collection := types.Collection{
 		Id:          uuid.New(),
 		Name:        name,
-		Slug:        slug,
+		Slug:        *slug,
 		Description: request.Body.Description,
 		CreatedAt:   now,
 		UpdatedAt:   now,

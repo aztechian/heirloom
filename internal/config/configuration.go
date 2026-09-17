@@ -8,6 +8,10 @@ import (
 	"github.com/spf13/viper"
 )
 
+// VERSION is set at build time via -ldflags, so it must be a package-level
+// variable rather than a const or a value threaded through the call stack.
+//
+//nolint:gochecknoglobals // set from a build-time -ldflags value
 var VERSION = "dev"
 
 type ServerConfig struct {
@@ -51,5 +55,6 @@ func LoadConfig() (*Config, error) {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
+
 	return &cfg, nil
 }

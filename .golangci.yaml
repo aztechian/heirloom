@@ -18,6 +18,16 @@ linters:
     - reassign
     - varnamelen
   settings:
+    errcheck:
+      # viper.BindEnv only errors when called with no key at all, which can't
+      # happen at these call sites since the key is a hardcoded string literal.
+      exclude-functions:
+        - github.com/spf13/viper.BindEnv
+    gosec:
+      excludes:
+        # G104 duplicates errcheck (which is also enabled); no need for both
+        # to report the same unchecked-error findings.
+        - G104
     nlreturn:
       block-size: 5
     varnamelen:
@@ -31,6 +41,9 @@ linters:
         - w http.ResponseWriter
         - r *http.Request
         - t testing.T
+        - b strings.Builder
+        - d Dialect
+        - s string
   exclusions:
     rules:
       # Generated code is not ours to lint.

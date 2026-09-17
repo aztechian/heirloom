@@ -75,28 +75,15 @@ func TestCreateCollection_ValidationErrors(t *testing.T) {
 		body types.CreateCollectionRequest
 	}{
 		{
-			name: "empty name",
-			body: types.CreateCollectionRequest{Name: "   "},
+			// Every rune is stripped by slugify, leaving nothing to derive from.
+			name: "name derives an empty slug",
+			body: types.CreateCollectionRequest{Name: "!!!"},
 		},
 		{
-			name: "name too long",
-			body: types.CreateCollectionRequest{Name: strings.Repeat("a", MaxNameLength+1)},
-		},
-		{
-			name: "explicit slug too long",
-			body: types.CreateCollectionRequest{Name: "ok", Slug: ptr(strings.Repeat("a", MaxSlugLength+1))},
-		},
-		{
-			name: "explicit slug with invalid characters",
-			body: types.CreateCollectionRequest{Name: "ok", Slug: ptr("Not_Valid!")},
-		},
-		{
-			name: "explicit empty slug",
-			body: types.CreateCollectionRequest{Name: "ok", Slug: ptr("")},
-		},
-		{
-			name: "description too long",
-			body: types.CreateCollectionRequest{Name: "ok", Description: ptr(strings.Repeat("a", MaxDescriptionLength+1))},
+			// slugify never inserts hyphens as densely as MaxSlugLength+1 plain runs,
+			// so a name this long reliably derives an over-length slug.
+			name: "name derives an over-length slug",
+			body: types.CreateCollectionRequest{Name: strings.Repeat("a", MaxSlugLength+1)},
 		},
 	}
 

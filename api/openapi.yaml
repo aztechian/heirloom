@@ -47,10 +47,13 @@ info:
     ## Constraint enforcement
 
     The `pattern`, `minLength`, `maxLength`, `minimum`, and `maximum` keywords in
-    this document are **contract, not generated code**. The Go generator produces
-    no validation from them, so handlers are responsible for enforcing every one
-    and returning `422` on violation. Treat any constraint here as a handler
-    obligation.
+    this document are enforced automatically: request-validation middleware
+    checks every incoming request against this spec before a handler runs and
+    returns `422` (with per-field detail in `errors`) on violation, or `400` if
+    the request can't be parsed against the contract at all (missing/malformed
+    body, wrong content type). Handlers are responsible only for constraints
+    the schema can't express — e.g. an invariant over a value the server
+    derives, such as a slug computed from `name`.
 
     ## Authentication
 

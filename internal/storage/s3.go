@@ -15,6 +15,12 @@ import (
 // DefaultS3Timeout bounds the duration of any single S3 API call.
 const DefaultS3Timeout = 30 * time.Second
 
+type S3Storage struct {
+	Logger *zerolog.Logger
+	Client *s3.Client
+	Bucket string
+}
+
 func NewS3Storage(ctx context.Context, cfg config.Config) *S3Storage {
 	logger := zerolog.Ctx(ctx)
 	s3config, err := loadS3Config(ctx, cfg.S3)
@@ -43,13 +49,8 @@ func loadS3Config(ctx context.Context, cfg config.S3Config) (aws.Config, error) 
 	if cfg.Endpoint != "" {
 		opts = append(opts, awsconfig.WithBaseEndpoint(cfg.Endpoint))
 	}
-	return awsconfig.LoadDefaultConfig(ctx, opts...)
-}
 
-type S3Storage struct {
-	Logger *zerolog.Logger
-	Client *s3.Client
-	Bucket string
+	return awsconfig.LoadDefaultConfig(ctx, opts...)
 }
 
 func (s *S3Storage) Initialize(ctx context.Context, collection string) error {
@@ -79,7 +80,7 @@ func (s *S3Storage) createCollection(ctx context.Context, name string) error {
 		// Collection already exists
 		return nil
 	}
-
 	_, err := s.Client.PutObject(ctx, input)
+
 	return err
 }
