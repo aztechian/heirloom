@@ -140,6 +140,8 @@ jobs:
           touch static/index.html
 
       - name: Test
+        env:
+          HEIRLOOM_TEST_POSTGRES_DSN: postgres://heirloom:heirloom@localhost:5432/heirloom?sslmode=disable
         run: make junit
 
       # Public repository: Codecov's tokenless upload works from GitHub Actions,
