@@ -122,6 +122,24 @@ jobs:
       contents: read
       checks: write
       pull-requests: write
+    # TestPostgresMigrate fails CI (rather than skipping) whenever
+    # HEIRLOOM_TEST_POSTGRES_DSN is unset, so the DSN set below for this job
+    # must point at a real server. Same image/credentials as the
+    # migrations-postgres job.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: heirloom
+          POSTGRES_USER: heirloom
+          POSTGRES_DB: heirloom
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U heirloom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
