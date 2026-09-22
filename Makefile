@@ -97,5 +97,12 @@ junit: $(API_TYPES_FILE)
 	(go test -v -race -coverprofile=coverage.out ./... 2>&1 || true) \
 		| go tool go-junit-report --set-exit-code > report.xml
 
+# node_modules is included here because its optional native dependencies
+# (e.g. the TypeScript and Rolldown platform binaries) are architecture- and
+# OS-specific. This repo is commonly bind-mounted into a Linux dev container
+# and also built directly on a macOS/Windows host; if node_modules was
+# installed in one environment it is silently missing the native package for
+# the other, and the build fails with something like "Unable to resolve
+# @typescript/typescript-darwin-arm64". Run `make clean` when switching hosts.
 clean:
-	rm -rf $(PROJECT_NAME) $(STATIC_DIR) $(API_TYPES_FILE) coverage.out report.xml
+	rm -rf $(PROJECT_NAME) $(STATIC_DIR) $(API_TYPES_FILE) coverage.out report.xml frontend/node_modules

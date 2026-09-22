@@ -11,6 +11,7 @@ import (
 
 	"github.com/aztechian/heirloom/internal/config"
 	"github.com/aztechian/heirloom/internal/server"
+	"github.com/aztechian/heirloom/internal/storage"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -35,7 +36,12 @@ func main() {
 		return
 	}
 
-	srv, cancel := server.NewServer(&serverCtx, *config)
+	store, err := storage.New(serverCtx, *config)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize storage")
+	}
+
+	srv, cancel := server.NewServer(&serverCtx, *config, store)
 	defer cancel()
 
 	// Set up channel to listen for signals

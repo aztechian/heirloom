@@ -13,6 +13,33 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
+// fakeStorage is a minimal in-memory storage.Storage used to exercise
+// handlers without touching the filesystem or a network-backed store.
+type fakeStorage struct {
+	existing  map[string]bool
+	createErr error
+}
+
+func (f *fakeStorage) CollectionExists(_ context.Context, name string) bool {
+	return f.existing[name]
+}
+
+func (f *fakeStorage) CreateCollection(_ context.Context, name string) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+	if f.existing == nil {
+		f.existing = map[string]bool{}
+	}
+	f.existing[name] = true
+	return nil
+}
+
+func (f *fakeStorage) DeleteCollection(_ context.Context, name string) error {
+	delete(f.existing, name)
+	return nil
+}
+
 func TestCreateCollection_NilBody(t *testing.T) {
 	resp, err := (apiHandlers{}).CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: nil})
 	require.NoError(t, err)
@@ -52,7 +79,8 @@ func TestCreateCollection_Success(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, err := (apiHandlers{}).CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &tc.body})
+			h := apiHandlers{store: &fakeStorage{}}
+			resp, err := h.CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &tc.body})
 			require.NoError(t, err)
 
 			got, ok := resp.(types.CreateCollection201JSONResponse)
@@ -64,7 +92,7 @@ func TestCreateCollection_Success(t *testing.T) {
 			assert.False(t, got.Body.CreatedAt.IsZero())
 			assert.False(t, got.Body.UpdatedAt.IsZero())
 			assert.Equal(t, tc.body.Description, got.Body.Description)
-			assert.Equal(t, "/api/v1/collections/"+got.Body.Id.String(), got.Headers.Location)
+			assert.Equal(t, "/api/v1/collections/"+got.Body.Slug, got.Headers.Location)
 		})
 	}
 }

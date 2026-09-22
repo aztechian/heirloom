@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aztechian/heirloom/internal/api/types"
+	"github.com/aztechian/heirloom/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +16,7 @@ import (
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	applyRoutes(mux)
+	applyRoutes(mux, &storage.LocalStorage{BasePath: t.TempDir()})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

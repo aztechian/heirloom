@@ -55,14 +55,36 @@ func loadS3Config(ctx context.Context, cfg config.S3Config) (aws.Config, error) 
 
 func (s *S3Storage) Initialize(ctx context.Context, collection string) error {
 	// Initialization logic for S3 storage goes here
-	if err := s.createCollection(ctx, collection); err != nil {
+	if err := s.CreateCollection(ctx, collection); err != nil {
 		return err
 	}
 	// likely needs additional setup for upload directories, parquet files in the future
 	return nil
 }
 
-func (s *S3Storage) createCollection(ctx context.Context, name string) error {
+func (s *S3Storage) CollectionExists(ctx context.Context, name string) bool {
+	ctx, cancel := context.WithTimeout(ctx, DefaultS3Timeout)
+	defer cancel()
+
+	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.Bucket),
+		Key:    aws.String("/" + name + "/"),
+	})
+	return err == nil
+}
+
+func (s *S3Storage) DeleteCollection(ctx context.Context, name string) error {
+	ctx, cancel := context.WithTimeout(ctx, DefaultS3Timeout)
+	defer cancel()
+
+	_, err := s.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.Bucket),
+		Key:    aws.String("/" + name + "/"),
+	})
+	return err
+}
+
+func (s *S3Storage) CreateCollection(ctx context.Context, name string) error {
 	ctx, cancel := context.WithTimeout(ctx, DefaultS3Timeout)
 	defer cancel()
 
