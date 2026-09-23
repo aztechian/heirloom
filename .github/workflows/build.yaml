@@ -90,6 +90,9 @@ jobs:
     name: golangci-lint
     runs-on: ubuntu-latest
     needs: [generate]
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -110,6 +113,8 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
+          fail_level: info
+          reporter: github-pr-review
           # go generate has to run first, so the action's own cache setup is
           # disabled in favour of setup-go's.
           skip-cache: true
