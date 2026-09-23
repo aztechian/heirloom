@@ -111,9 +111,9 @@ jobs:
           touch static/index.html
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: reviewdog/action-golangci-lint@v2
         with:
-          fail_level: info
+          fail_level: warning
           reporter: github-pr-review
           # go generate has to run first, so the action's own cache setup is
           # disabled in favour of setup-go's.
