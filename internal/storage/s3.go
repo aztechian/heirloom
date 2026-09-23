@@ -70,6 +70,7 @@ func (s *S3Storage) CollectionExists(ctx context.Context, name string) bool {
 		Bucket: aws.String(s.Bucket),
 		Key:    aws.String("/" + name + "/"),
 	})
+
 	return err == nil
 }
 
@@ -81,6 +82,7 @@ func (s *S3Storage) DeleteCollection(ctx context.Context, name string) error {
 		Bucket: aws.String(s.Bucket),
 		Key:    aws.String("/" + name + "/"),
 	})
+
 	return err
 }
 

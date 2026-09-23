@@ -5,6 +5,8 @@ import (
 	"os"
 )
 
+const DefaultCollectionPerms os.FileMode = 0750
+
 type LocalStorage struct {
 	BasePath string
 }
@@ -14,14 +16,8 @@ func NewLocalStorage(basePath string) *LocalStorage {
 		BasePath: basePath,
 	}
 	storage.initializeBasePath()
-	return storage
-}
 
-func (l *LocalStorage) initializeBasePath() string {
-	if err := os.MkdirAll(l.BasePath, 0755); err != nil {
-		panic(err)
-	}
-	return l.BasePath
+	return storage
 }
 
 func (l *LocalStorage) CollectionExists(ctx context.Context, name string) bool {
@@ -34,6 +30,7 @@ func (l *LocalStorage) CollectionExists(ctx context.Context, name string) bool {
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return true
 	}
+
 	return false
 }
 
@@ -43,7 +40,8 @@ func (l *LocalStorage) CreateCollection(ctx context.Context, name string) error 
 	}
 	// Logic to create a collection in local storage goes here
 	path := l.BasePath + "/" + name
-	return os.MkdirAll(path, 0755)
+
+	return os.MkdirAll(path, DefaultCollectionPerms)
 }
 
 func (l *LocalStorage) DeleteCollection(ctx context.Context, name string) error {
@@ -52,5 +50,14 @@ func (l *LocalStorage) DeleteCollection(ctx context.Context, name string) error 
 	}
 	// Logic to delete a collection in local storage goes here
 	path := l.BasePath + "/" + name
+
 	return os.RemoveAll(path)
+}
+
+func (l *LocalStorage) initializeBasePath() string {
+	if err := os.MkdirAll(l.BasePath, DefaultCollectionPerms); err != nil {
+		panic(err)
+	}
+
+	return l.BasePath
 }

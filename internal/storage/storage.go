@@ -24,5 +24,6 @@ func New(ctx context.Context, cfg config.Config) (Storage, error) {
 		}
 		return s3Storage, nil
 	}
+
 	return NewLocalStorage(cfg.Server.DataPath), nil
 }
