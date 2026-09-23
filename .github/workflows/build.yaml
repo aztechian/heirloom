@@ -175,6 +175,7 @@ jobs:
         with:
           files: coverage.out
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       # Also fine without indirection on a public repo: the workflow_run
       # trampoline this action documents is needed for private repos and
