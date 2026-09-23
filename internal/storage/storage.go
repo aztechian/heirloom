@@ -24,9 +24,11 @@ func New(ctx context.Context, cfg config.Config) (Storage, error) {
 			return nil, fmt.Errorf("failed to initialize S3 storage")
 		}
 		zerolog.Ctx(ctx).Debug().Str("bucket", cfg.S3.Bucket).Msg("Initialized S3 storage")
+
 		return s3Storage, nil
 	}
 
 	zerolog.Ctx(ctx).Debug().Str("location", cfg.Server.DataPath).Msg("Initialized local storage")
+
 	return NewLocalStorage(cfg.Server.DataPath), nil
 }
