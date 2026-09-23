@@ -7,15 +7,24 @@ import (
 	"time"
 
 	"github.com/aztechian/heirloom/internal/api/types"
+	"github.com/aztechian/heirloom/internal/storage"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 )
 
 const MaxSlugLength = 64
 
-// apiHandlers implements types.StrictServerInterface. Storage, so every
-// method below except CreateCollection is a placeholder until a persistence
-// layer exists to back it.
-type apiHandlers struct{}
+// apiHandlers implements types.StrictServerInterface. It holds the Storage
+// dependency used to persist collections; every method below except
+// CreateCollection is still a placeholder until the rest of the store layer
+// exists to back it.
+type apiHandlers struct {
+	store storage.Storage
+}
+
+func newAPIHandlers(store storage.Storage) apiHandlers {
+	return apiHandlers{store: store}
+}
 
 // slugify derives a URL-safe slug from a collection name: lowercased, with
 // runs of anything other than a-z0-9 collapsed to a single hyphen, and
@@ -47,7 +56,7 @@ func problem(status int, title, detail string) types.Problem {
 	}
 }
 
-func (apiHandlers) CreateCollection(_ context.Context, request types.CreateCollectionRequestObject) (types.CreateCollectionResponseObject, error) {
+func (h apiHandlers) CreateCollection(ctx context.Context, request types.CreateCollectionRequestObject) (types.CreateCollectionResponseObject, error) {
 	if request.Body == nil {
 		return types.CreateCollection400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: types.BadRequestApplicationProblemPlusJSONResponse(
@@ -75,10 +84,21 @@ func (apiHandlers) CreateCollection(_ context.Context, request types.CreateColle
 		slug = &derived
 	}
 
-	// TODO: persist via the store layer once it exists, mapping a UNIQUE(slug)
-	// violation to CreateCollection409ApplicationProblemPlusJSONResponse.
+	if h.store.CollectionExists(ctx, *slug) {
+		return types.CreateCollection409ApplicationProblemPlusJSONResponse(
+			problem(http.StatusConflict, "Collection already exists", "A collection with this slug already exists."),
+		), nil
+	}
 
-	// Use the S3 CreateNewCollection function to persist the collection once the store layer exists
+	if err := h.store.CreateCollection(ctx, *slug); err != nil {
+		return types.CreateCollection500ApplicationProblemPlusJSONResponse{
+			InternalErrorApplicationProblemPlusJSONResponse: types.InternalErrorApplicationProblemPlusJSONResponse(
+				problem(http.StatusInternalServerError, "Storage error", "Failed to create collection storage."),
+			),
+		}, nil
+	}
+
+	zerolog.Ctx(ctx).Info().Str("collection", *slug).Msg("Created Collection")
 	// Maybe write the Collection struct as sidecar metadata alongside the S3 object.
 	now := time.Now().UTC()
 	collection := types.Collection{
@@ -93,7 +113,7 @@ func (apiHandlers) CreateCollection(_ context.Context, request types.CreateColle
 	return types.CreateCollection201JSONResponse{
 		Body: collection,
 		Headers: types.CreateCollection201ResponseHeaders{
-			Location: "/api/v1/collections/" + collection.Id.String(),
+			Location: "/api/v1/collections/" + collection.Slug,
 		},
 	}, nil
 }

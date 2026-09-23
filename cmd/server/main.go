@@ -11,6 +11,7 @@ import (
 
 	"github.com/aztechian/heirloom/internal/config"
 	"github.com/aztechian/heirloom/internal/server"
+	"github.com/aztechian/heirloom/internal/storage"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -21,7 +22,6 @@ func main() {
 	// Configure zerolog
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).Level(zerolog.InfoLevel)
-	serverCtx := log.Logger.WithContext(context.Background()) // add logger to top-level context
 
 	// Load configuration
 	config, err := config.LoadConfig()
@@ -29,13 +29,29 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
 
+	// Set the logger level based on the configured log level
+	level, err := zerolog.ParseLevel(config.Server.LogLevel)
+	if err != nil {
+		log.Warn().Err(err).Str("log_level", config.Server.LogLevel).Msg("Invalid log level, using default")
+	} else {
+		log.Logger = log.Logger.Level(level)
+	}
+
+	serverCtx := log.Logger.WithContext(context.Background()) // add logger to top-level context
+
 	// Check if help was requested
 	if config.ShowHelp() {
 		config.PrintHelp()
 		return
 	}
 
-	srv, cancel := server.NewServer(&serverCtx, *config)
+	// Initialize storage based on the configuration
+	store, err := storage.New(serverCtx, *config)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize storage")
+	}
+
+	srv, cancel := server.NewServer(&serverCtx, *config, store)
 	defer cancel()
 
 	// Set up channel to listen for signals

@@ -19,6 +19,7 @@ type ServerConfig struct {
 	LogLevel     string `mapstructure:"log_level"`
 	ReadTimeout  int    `mapstructure:"read_timeout"`
 	WriteTimeout int    `mapstructure:"write_timeout"`
+	DataPath     string `mapstructure:"data_path"`
 }
 
 type S3Config struct {
