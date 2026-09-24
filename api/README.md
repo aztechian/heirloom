@@ -6,7 +6,7 @@ The direction of authority matters and is easy to erode: change the spec, regene
 
 ## Layout
 
-```
+```text
 api/
   openapi.yaml        OpenAPI 3.0.3 document -- the contract
   oapi-codegen.yaml   generator configuration
@@ -47,9 +47,9 @@ Worth being precise about, because the whole justification for generating is tha
 
 **Versioned paths.** All routes live under `/api/v1/` deliberately: this repository is public and other people will run their own instances, so a breaking change costs strangers real pain. The version prefix is nearly free now and cannot be retrofitted gracefully.
 
-**Assets are nested under collections.** `/api/v1/collections/{collectionId}/assets/{assetId}`, with no instance-wide `/assets/{id}` route. The nesting is a security measure rather than an aesthetic one: it puts the authorization scope in the path, so a handler cannot accidentally serve an asset from the wrong collection by looking up an ID in isolation. Given that collections are the tenancy boundary for unrelated families, that mistake is exactly the one worth designing out.
+**Assets are nested under collections.** `/api/v1/collections/{collectionSlug}/assets/{assetId}`, with no instance-wide `/assets/{id}` route. The nesting is a security measure rather than an aesthetic one: it puts the authorization scope in the path, so a handler cannot accidentally serve an asset from the wrong collection by looking up an asset in isolation. Given that collections are the tenancy boundary for unrelated families, that mistake is exactly the one worth designing out.
 
-The corollary has to be implemented, not just intended: an asset that exists in a *different* collection returns **`404`, not `403`**. A `403` confirms the asset exists, which leaks one family's contents to another. Every asset lookup filters on `collectionId` in the query — never fetch by ID and then compare.
+The corollary has to be implemented, not just intended: an asset that exists in a *different* collection returns **`404`, not `403`**. A `403` confirms the asset exists, which leaks one family's contents to another. Every asset lookup filters on `collectionSlug` in the query — never fetch by asset id alone and then compare.
 
 **Errors are RFC 9457 `application/problem+json`.** A public API consumed by scripts needs machine-readable failures; branch on HTTP status and the `type` field, never on the prose in `detail`.
 
@@ -63,11 +63,11 @@ The corollary has to be implemented, not just intended: an asset that exists in 
 
 A collection is the isolation boundary. Every asset, person, and assertion belongs to exactly one. A single-family self-hosted instance is an instance with one collection — not a special mode, and not a separate code path. That is what lets one deployment serve several unrelated families without a second implementation.
 
-`slug` is URL-safe, unique per instance, and derived from `name` when omitted. It is **immutable once set**, because it will appear in links handed to relatives, and those links live in inboxes for years.
+`slug` is URL-safe, unique per instance, and derived from `name` when omitted. It is **immutable once set**, because it will appear in links handed to relatives, and those links live in inboxes for years. Collections have no separate opaque id: the slug *is* the identifier, which is what lets a collection's directory on storage be found directly, without a database mapping from an id to a location.
 
 ## Uploading assets
 
-`POST /api/v1/collections/{collectionId}/assets` takes `multipart/form-data` with one file per request. Bytes stream through the application to the configured storage backend rather than being buffered — source scans run 50–200 MB, and buffering them is how a self-hosted instance on modest hardware falls over.
+`POST /api/v1/collections/{collectionSlug}/assets` takes `multipart/form-data` with one file per request. Bytes stream through the application to the configured storage backend rather than being buffered — source scans run 50–200 MB, and buffering them is how a self-hosted instance on modest hardware falls over.
 
 ### Part ordering is contractual
 
@@ -81,7 +81,7 @@ Bytes pass through the app so that the same contract works over object storage a
 
 ### Deduplication is the reason bulk ingest is safe
 
-An asset's identity is the pair (`collectionId`, `contentHash`), so deduplication is **scoped to a collection**. Identical bytes uploaded into two collections produce two assets — two families may legitimately hold the same photograph, and neither should be able to learn that from the other's dedupe behavior.
+An asset's identity is the pair (`collectionSlug`, `contentHash`), so deduplication is **scoped to a collection**. Identical bytes uploaded into two collections produce two assets — two families may legitimately hold the same photograph, and neither should be able to learn that from the other's dedupe behavior.
 
 Uploading content already present in the collection returns `200 OK` with the existing asset instead of `201 Created` with a new one. Nothing is created and nothing is modified.
 
@@ -101,11 +101,11 @@ Media type is detected from content, not from the client-declared `Content-Type`
 
 ### Correcting an asset
 
-`PATCH /api/v1/collections/{collectionId}/assets/{assetId}` changes `sensitivity` and `kind`, and nothing else.
+`PATCH /api/v1/collections/{collectionSlug}/assets/{assetId}` changes `sensitivity` and `kind`, and nothing else.
 
 It exists because both are wrong at upload time in practice. Material is recognized as private only once someone looks at it, and the dedupe path cannot set sensitivity at all — without this endpoint, anything ingested as `normal` would be permanently shareable, which contradicts the whole point of having the flag. `kind` is correctable because content detection will read a photographed document as a photo.
 
-`contentHash`, `sizeBytes`, `mediaType`, `collectionId`, and the timestamps are immutable and rejected here. Source bytes are never rewritten, which is what keeps `contentHash` a stable identity; extracted metadata goes to XMP sidecars instead.
+`contentHash`, `sizeBytes`, `mediaType`, `collectionSlug`, and the timestamps are immutable and rejected here. Source bytes are never rewritten, which is what keeps `contentHash` a stable identity; extracted metadata goes to XMP sidecars instead.
 
 ## Security posture, stated plainly
 
