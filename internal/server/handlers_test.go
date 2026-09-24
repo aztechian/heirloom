@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aztechian/heirloom/internal/api/types"
 	"github.com/stretchr/testify/assert"
@@ -24,20 +25,33 @@ func (f *fakeStorage) CollectionExists(_ context.Context, name string) bool {
 	return f.existing[name]
 }
 
-func (f *fakeStorage) CreateCollection(_ context.Context, name string) error {
+func (f *fakeStorage) CreateCollection(_ context.Context, collection types.Collection) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
 	if f.existing == nil {
 		f.existing = map[string]bool{}
 	}
-	f.existing[name] = true
+	f.existing[collection.Slug] = true
 	return nil
 }
 
-func (f *fakeStorage) DeleteCollection(_ context.Context, name string) error {
-	delete(f.existing, name)
+func (f *fakeStorage) DeleteCollection(_ context.Context, collection types.Collection) error {
+	delete(f.existing, collection.Slug)
 	return nil
+}
+
+func (f *fakeStorage) ListCollections(_ context.Context) []types.Collection {
+	collections := make([]types.Collection, 0, len(f.existing))
+	for slug := range f.existing {
+		collections = append(collections, types.Collection{
+			Slug:      slug,
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+			Name:      slug,
+		})
+	}
+	return collections
 }
 
 func TestCreateCollection_NilBody(t *testing.T) {
@@ -88,7 +102,6 @@ func TestCreateCollection_Success(t *testing.T) {
 
 			assert.Equal(t, tc.wantSlg, got.Body.Slug)
 			assert.Equal(t, strings.TrimSpace(tc.body.Name), got.Body.Name)
-			assert.NotEmpty(t, got.Body.Id.String())
 			assert.False(t, got.Body.CreatedAt.IsZero())
 			assert.False(t, got.Body.UpdatedAt.IsZero())
 			assert.Equal(t, tc.body.Description, got.Body.Description)
