@@ -16,9 +16,14 @@ info:
     belongs to exactly one collection. A single-family self-hosted instance is
     simply an instance with one collection; nothing about the code path differs.
 
+    Collections have no separate opaque id. The `slug` is the identifier: it
+    appears in the collection's URL and names the collection's directory on
+    storage, so there is no database mapping to maintain between an id and
+    where a collection actually lives.
+
     ## Content identity and deduplication
 
-    An asset's identity is the pair (`collectionId`, `contentHash`), where
+    An asset's identity is the pair (`collectionSlug`, `contentHash`), where
     `contentHash` is the SHA-256 of the source bytes. Deduplication is therefore
     **scoped to a collection**: identical bytes uploaded to two different
     collections produce two distinct assets, because two families may
@@ -169,9 +174,9 @@ paths:
         default:
           $ref: '#/components/responses/Unexpected'
 
-  /api/v1/collections/{collectionId}:
+  /api/v1/collections/{collectionSlug}:
     parameters:
-      - $ref: '#/components/parameters/CollectionId'
+      - $ref: '#/components/parameters/CollectionSlug'
     get:
       summary: Get a collection
       operationId: getCollection
@@ -192,9 +197,9 @@ paths:
         default:
           $ref: '#/components/responses/Unexpected'
 
-  /api/v1/collections/{collectionId}/assets:
+  /api/v1/collections/{collectionSlug}/assets:
     parameters:
-      - $ref: '#/components/parameters/CollectionId'
+      - $ref: '#/components/parameters/CollectionSlug'
     get:
       summary: List assets in a collection
       description: |
@@ -355,9 +360,9 @@ paths:
         default:
           $ref: '#/components/responses/Unexpected'
 
-  /api/v1/collections/{collectionId}/assets/{assetId}:
+  /api/v1/collections/{collectionSlug}/assets/{assetId}:
     parameters:
-      - $ref: '#/components/parameters/CollectionId'
+      - $ref: '#/components/parameters/CollectionSlug'
       - $ref: '#/components/parameters/AssetId'
     get:
       summary: Get an asset
@@ -400,7 +405,7 @@ paths:
         will misclassify a photographed document as a photo.
 
         Immutable by design and therefore not accepted here: `contentHash`,
-        `sizeBytes`, `mediaType`, `collectionId`, and the upload timestamps.
+        `sizeBytes`, `mediaType`, `collectionSlug`, and the upload timestamps.
       operationId: updateAsset
       tags: [Assets]
       security:
@@ -432,14 +437,19 @@ paths:
 
 components:
   parameters:
-    CollectionId:
-      name: collectionId
+    CollectionSlug:
+      name: collectionSlug
       in: path
       required: true
-      description: UUID of the collection
+      description: |
+        Slug of the collection. Collections have no separate opaque id: the
+        slug is the identifier, appears in the collection's URL, and names its
+        directory on storage.
       schema:
         type: string
-        format: uuid
+        pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        minLength: 1
+        maxLength: 64
     AssetId:
       name: assetId
       in: path
@@ -661,16 +671,11 @@ components:
     Collection:
       type: object
       required:
-        - id
         - name
         - slug
         - createdAt
         - updatedAt
       properties:
-        id:
-          type: string
-          format: uuid
-          example: "3f2a7c1e-9b4d-4a6f-8e21-5c7d0b9a1234"
         name:
           type: string
           example: "Nielsen Family Estate"
@@ -813,7 +818,7 @@ components:
       type: object
       required:
         - id
-        - collectionId
+        - collectionSlug
         - contentHash
         - originalFilename
         - mediaType
@@ -827,15 +832,21 @@ components:
           type: string
           format: uuid
           example: "b71c9d84-2e5f-4c3a-9d18-6f4e2a7b0c55"
-        collectionId:
+        collectionSlug:
           type: string
-          format: uuid
-          example: "3f2a7c1e-9b4d-4a6f-8e21-5c7d0b9a1234"
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          minLength: 1
+          maxLength: 64
+          description: |
+            Slug of the collection this asset belongs to. Collections have no
+            separate opaque id, so the slug is what identifies which collection
+            an asset is in.
+          example: "nielsen-estate"
         contentHash:
           type: string
           description: |
             Lowercase hex SHA-256 of the source bytes. Together with
-            `collectionId` this forms the asset's identity and the basis for
+            `collectionSlug` this forms the asset's identity and the basis for
             deduplication within the collection. Source bytes are never modified
             in place, so this value is stable for the asset's lifetime; extracted
             metadata is published to sidecar files instead.

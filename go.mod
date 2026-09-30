@@ -22,7 +22,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.112.0
 	github.com/getkin/kin-openapi v0.142.0
-	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
 	// Test-only today: imported by internal/store's Postgres migration test so
 	// that dialect drift is caught in CI. store.Open still refuses the postgres
@@ -61,6 +60,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,7 @@ import (
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	applyRoutes(mux, &storage.LocalStorage{BasePath: t.TempDir()})
+	applyRoutes(mux, storage.NewLocalStorage(context.Background(), t.TempDir()))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

@@ -8,7 +8,6 @@ import (
 
 	"github.com/aztechian/heirloom/internal/api/types"
 	"github.com/aztechian/heirloom/internal/storage"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -84,31 +83,30 @@ func (h apiHandlers) CreateCollection(ctx context.Context, request types.CreateC
 		slug = &derived
 	}
 
+	var assets int64 = 0
+	collection := types.Collection{
+		Name:        name,
+		Slug:        *slug,
+		Description: request.Body.Description,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+		AssetCount:  &assets,
+	}
+
 	if h.store.CollectionExists(ctx, *slug) {
 		return types.CreateCollection409ApplicationProblemPlusJSONResponse(
 			problem(http.StatusConflict, "Collection already exists", "A collection with this slug already exists."),
 		), nil
 	}
 
-	if err := h.store.CreateCollection(ctx, *slug); err != nil {
+	if err := h.store.CreateCollection(ctx, collection); err != nil {
 		return types.CreateCollection500ApplicationProblemPlusJSONResponse{
 			InternalErrorApplicationProblemPlusJSONResponse: types.InternalErrorApplicationProblemPlusJSONResponse(
 				problem(http.StatusInternalServerError, "Storage error", "Failed to create collection storage."),
 			),
 		}, nil
 	}
-
-	zerolog.Ctx(ctx).Info().Str("collection", *slug).Msg("Created Collection")
-	// Maybe write the Collection struct as sidecar metadata alongside the S3 object.
-	now := time.Now().UTC()
-	collection := types.Collection{
-		Id:          uuid.New(),
-		Name:        name,
-		Slug:        *slug,
-		Description: request.Body.Description,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
+	zerolog.Ctx(ctx).Info().Str("collection", collection.Slug).Msg("Created Collection")
 
 	return types.CreateCollection201JSONResponse{
 		Body: collection,
@@ -118,10 +116,10 @@ func (h apiHandlers) CreateCollection(ctx context.Context, request types.CreateC
 	}, nil
 }
 
-func (apiHandlers) ListCollections(_ context.Context, _ types.ListCollectionsRequestObject) (types.ListCollectionsResponseObject, error) {
-	return types.ListCollectionsdefaultApplicationProblemPlusJSONResponse{
-		Body:       problem(http.StatusNotImplemented, "Not implemented", "listCollections is not implemented yet."),
-		StatusCode: http.StatusNotImplemented,
+func (h apiHandlers) ListCollections(ctx context.Context, _ types.ListCollectionsRequestObject) (types.ListCollectionsResponseObject, error) {
+	collections := h.store.ListCollections(ctx)
+	return types.ListCollections200JSONResponse{
+		Collections: collections,
 	}, nil
 }
 
