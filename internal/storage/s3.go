@@ -23,9 +23,21 @@ const DefaultS3Timeout = 30 * time.Second
 const DefaultCollectionTags = "resource=collection"
 const DefaultMetadataTags = "resource=metadata"
 
+// s3Client is the subset of *s3.Client's methods that S3Storage depends on.
+// Declaring it as an interface (rather than embedding *s3.Client directly)
+// lets tests substitute a fake implementation without making real AWS calls
+// or standing up a network-backed mock.
+type s3Client interface {
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+}
+
 type S3Storage struct {
 	Logger       *zerolog.Logger
-	Client       *s3.Client
+	Client       s3Client
 	Bucket       string
 	MetadataPath string
 }

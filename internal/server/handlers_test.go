@@ -139,3 +139,52 @@ func TestCreateCollection_ValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateCollection_Conflict(t *testing.T) {
+	store := &fakeStorage{existing: map[string]bool{"vacation": true}}
+	h := apiHandlers{store: store}
+
+	body := types.CreateCollectionRequest{Name: "Vacation"}
+	resp, err := h.CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &body})
+	require.NoError(t, err)
+
+	got, ok := resp.(types.CreateCollection409ApplicationProblemPlusJSONResponse)
+	require.True(t, ok, "expected 409 response, got %T", resp)
+	assert.Equal(t, int32(http.StatusConflict), got.Status)
+}
+
+func TestCreateCollection_StorageError(t *testing.T) {
+	store := &fakeStorage{createErr: assert.AnError}
+	h := apiHandlers{store: store}
+
+	body := types.CreateCollectionRequest{Name: "Vacation"}
+	resp, err := h.CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &body})
+	require.NoError(t, err)
+
+	got, ok := resp.(types.CreateCollection500ApplicationProblemPlusJSONResponse)
+	require.True(t, ok, "expected 500 response, got %T", resp)
+	assert.Equal(t, int32(http.StatusInternalServerError), got.Status)
+}
+
+func TestListCollections(t *testing.T) {
+	store := &fakeStorage{existing: map[string]bool{"alpha": true, "beta": true}}
+	h := apiHandlers{store: store}
+
+	resp, err := h.ListCollections(context.Background(), types.ListCollectionsRequestObject{})
+	require.NoError(t, err)
+
+	got, ok := resp.(types.ListCollections200JSONResponse)
+	require.True(t, ok, "expected 200 response, got %T", resp)
+	assert.Len(t, got.Collections, 2)
+}
+
+func TestListCollections_Empty(t *testing.T) {
+	h := apiHandlers{store: &fakeStorage{}}
+
+	resp, err := h.ListCollections(context.Background(), types.ListCollectionsRequestObject{})
+	require.NoError(t, err)
+
+	got, ok := resp.(types.ListCollections200JSONResponse)
+	require.True(t, ok, "expected 200 response, got %T", resp)
+	assert.Empty(t, got.Collections)
+}
