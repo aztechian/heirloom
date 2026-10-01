@@ -1,0 +1,47 @@
+coverage:
+  precision: 1
+  round: up
+  range: "40...80"
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 15%
+        only_pulls: true
+    patch:
+      default:
+        target: auto
+        threshold: 40%
+comment:
+  layout: "header, diff, flags, components, files"
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+  individual_components:
+    - component_id: api_types
+      name: API Types
+      paths:
+        - internal/api/types/**
+    - component_id: config
+      name: Config
+      paths:
+        - internal/config/**
+    - component_id: server
+      name: Server Core
+      paths:
+        - internal/server/*.go
+    - component_id: handlers
+      name: HTTP Handlers
+      paths:
+        - internal/server/handlers/**
+    - component_id: storage
+      name: Storage
+      paths:
+        - internal/storage/**
+    - component_id: cmd
+      name: Entrypoint
+      paths:
+        - cmd/**
