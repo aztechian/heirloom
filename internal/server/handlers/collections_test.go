@@ -1,4 +1,4 @@
-package server
+package handlers
 
 import (
 	"context"
@@ -12,20 +12,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func ptr[T any](v T) *T { return &v }
-
-// fakeStorage is a minimal in-memory storage.Storage used to exercise
-// handlers without touching the filesystem or a network-backed store.
-type fakeStorage struct {
+// fakeCollectionStorage is a minimal in-memory storage.CollectionStorage
+// used to exercise collection handlers without touching the filesystem or a
+// network-backed store.
+type fakeCollectionStorage struct {
 	existing  map[string]bool
 	createErr error
 }
 
-func (f *fakeStorage) CollectionExists(_ context.Context, name string) bool {
+func (f *fakeCollectionStorage) CollectionExists(_ context.Context, name string) bool {
 	return f.existing[name]
 }
 
-func (f *fakeStorage) CreateCollection(_ context.Context, collection types.Collection) error {
+func (f *fakeCollectionStorage) CreateCollection(_ context.Context, collection types.Collection) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
@@ -36,12 +35,12 @@ func (f *fakeStorage) CreateCollection(_ context.Context, collection types.Colle
 	return nil
 }
 
-func (f *fakeStorage) DeleteCollection(_ context.Context, collection types.Collection) error {
+func (f *fakeCollectionStorage) DeleteCollection(_ context.Context, collection types.Collection) error {
 	delete(f.existing, collection.Slug)
 	return nil
 }
 
-func (f *fakeStorage) ListCollections(_ context.Context) []types.Collection {
+func (f *fakeCollectionStorage) ListCollections(_ context.Context) []types.Collection {
 	collections := make([]types.Collection, 0, len(f.existing))
 	for slug := range f.existing {
 		collections = append(collections, types.Collection{
@@ -55,7 +54,7 @@ func (f *fakeStorage) ListCollections(_ context.Context) []types.Collection {
 }
 
 func TestCreateCollection_NilBody(t *testing.T) {
-	resp, err := (apiHandlers{}).CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: nil})
+	resp, err := (API{}).CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: nil})
 	require.NoError(t, err)
 
 	got, ok := resp.(types.CreateCollection400ApplicationProblemPlusJSONResponse)
@@ -93,7 +92,7 @@ func TestCreateCollection_Success(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := apiHandlers{store: &fakeStorage{}}
+			h := API{collections: &fakeCollectionStorage{}}
 			resp, err := h.CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &tc.body})
 			require.NoError(t, err)
 
@@ -130,7 +129,7 @@ func TestCreateCollection_ValidationErrors(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, err := (apiHandlers{}).CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &tc.body})
+			resp, err := (API{}).CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &tc.body})
 			require.NoError(t, err)
 
 			got, ok := resp.(types.CreateCollection422ApplicationProblemPlusJSONResponse)
@@ -141,8 +140,8 @@ func TestCreateCollection_ValidationErrors(t *testing.T) {
 }
 
 func TestCreateCollection_Conflict(t *testing.T) {
-	store := &fakeStorage{existing: map[string]bool{"vacation": true}}
-	h := apiHandlers{store: store}
+	store := &fakeCollectionStorage{existing: map[string]bool{"vacation": true}}
+	h := API{collections: store}
 
 	body := types.CreateCollectionRequest{Name: "Vacation"}
 	resp, err := h.CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &body})
@@ -154,8 +153,8 @@ func TestCreateCollection_Conflict(t *testing.T) {
 }
 
 func TestCreateCollection_StorageError(t *testing.T) {
-	store := &fakeStorage{createErr: assert.AnError}
-	h := apiHandlers{store: store}
+	store := &fakeCollectionStorage{createErr: assert.AnError}
+	h := API{collections: store}
 
 	body := types.CreateCollectionRequest{Name: "Vacation"}
 	resp, err := h.CreateCollection(context.Background(), types.CreateCollectionRequestObject{Body: &body})
@@ -167,8 +166,8 @@ func TestCreateCollection_StorageError(t *testing.T) {
 }
 
 func TestListCollections(t *testing.T) {
-	store := &fakeStorage{existing: map[string]bool{"alpha": true, "beta": true}}
-	h := apiHandlers{store: store}
+	store := &fakeCollectionStorage{existing: map[string]bool{"alpha": true, "beta": true}}
+	h := API{collections: store}
 
 	resp, err := h.ListCollections(context.Background(), types.ListCollectionsRequestObject{})
 	require.NoError(t, err)
@@ -179,7 +178,7 @@ func TestListCollections(t *testing.T) {
 }
 
 func TestListCollections_Empty(t *testing.T) {
-	h := apiHandlers{store: &fakeStorage{}}
+	h := API{collections: &fakeCollectionStorage{}}
 
 	resp, err := h.ListCollections(context.Background(), types.ListCollectionsRequestObject{})
 	require.NoError(t, err)

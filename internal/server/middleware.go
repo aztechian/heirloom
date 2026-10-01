@@ -125,7 +125,7 @@ func requestErrorToProblem(err error) types.Problem {
 
 	var secErr *openapi3filter.SecurityRequirementsError
 	if errors.As(err, &secErr) {
-		return problem(http.StatusUnauthorized, "Unauthorized", secErr.Error())
+		return types.NewProblem(http.StatusUnauthorized, "Unauthorized", secErr.Error())
 	}
 
 	fe, status := requestErrorDetail(err)
@@ -135,9 +135,9 @@ func requestErrorToProblem(err error) types.Problem {
 
 func problemForStatus(status int, fieldErrors []types.FieldError) types.Problem {
 	if status == http.StatusBadRequest {
-		return problem(http.StatusBadRequest, "Malformed request", "The request could not be parsed against the API contract.")
+		return types.NewProblem(http.StatusBadRequest, "Malformed request", "The request could not be parsed against the API contract.")
 	}
-	p := problem(http.StatusUnprocessableEntity, "Validation failed", "The request does not satisfy the API contract.")
+	p := types.NewProblem(http.StatusUnprocessableEntity, "Validation failed", "The request does not satisfy the API contract.")
 	p.Errors = &fieldErrors
 
 	return p
