@@ -21,7 +21,7 @@ func NewServer(ctx *context.Context, cfg config.Config, store storage.Storage) (
 	_, cancel := context.WithCancel(*ctx)
 
 	mux := http.NewServeMux()
-	applyRoutes(mux, store)
+	applyRoutes(mux, store, cfg)
 	handler := applyGlobalMiddleware(mux)
 
 	// get the zerolog logger from the context, then wrap it with a log.New() to use it as the http Server's ErrorLog

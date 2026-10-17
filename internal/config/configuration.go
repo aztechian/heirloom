@@ -15,11 +15,13 @@ import (
 var VERSION = "dev"
 
 type ServerConfig struct {
-	Port         string `mapstructure:"port"`
-	LogLevel     string `mapstructure:"log_level"`
-	ReadTimeout  int    `mapstructure:"read_timeout"`
-	WriteTimeout int    `mapstructure:"write_timeout"`
-	DataPath     string `mapstructure:"data_path"`
+	Port             string `mapstructure:"port"`
+	LogLevel         string `mapstructure:"log_level"`
+	ReadTimeout      int    `mapstructure:"read_timeout"`
+	WriteTimeout     int    `mapstructure:"write_timeout"`
+	DataPath         string `mapstructure:"data_path"`
+	MaxAssetsBytes   int    `mapstructure:"max_assets_bytes"`
+	AllowedMimeTypes string `mapstructure:"allowed_mime_types"`
 }
 
 type S3Config struct {
@@ -31,8 +33,9 @@ type S3Config struct {
 }
 
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
-	S3     S3Config     `mapstructure:"s3"`
+	Version string       `mapstructure:"version"`
+	Server  ServerConfig `mapstructure:"server"`
+	S3      S3Config     `mapstructure:"s3"`
 }
 
 func LoadConfig() (*Config, error) {
