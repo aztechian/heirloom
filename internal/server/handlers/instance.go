@@ -2,14 +2,16 @@ package handlers
 
 import (
 	"context"
-	"net/http"
+	"strings"
 
 	"github.com/aztechian/heirloom/internal/api/types"
 )
 
-func (API) GetInstance(_ context.Context, _ types.GetInstanceRequestObject) (types.GetInstanceResponseObject, error) {
-	return types.GetInstancedefaultApplicationProblemPlusJSONResponse{
-		Body:       types.NewProblem(http.StatusNotImplemented, "Not implemented", "getInstance is not implemented yet."),
-		StatusCode: http.StatusNotImplemented,
+func (h API) GetInstance(_ context.Context, _ types.GetInstanceRequestObject) (types.GetInstanceResponseObject, error) {
+	return types.GetInstance200JSONResponse{
+		Version:               h.config.Version,
+		MaxAssetBytes:         (int64)(h.config.Server.MaxAssetsBytes),
+		AcceptedMediaTypes:    strings.Split(h.config.Server.AllowedMimeTypes, ","),
+		AuthenticationEnabled: false,
 	}, nil
 }

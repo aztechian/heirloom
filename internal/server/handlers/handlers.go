@@ -6,6 +6,7 @@ package handlers
 import (
 	"strings"
 
+	"github.com/aztechian/heirloom/internal/config"
 	"github.com/aztechian/heirloom/internal/storage"
 )
 
@@ -17,13 +18,14 @@ const MaxSlugLength = 64
 // needs to fake methods belonging to another.
 type API struct {
 	collections storage.CollectionStorage
+	config      config.Config
 }
 
 // New constructs an API backed by store. Each field is assigned
 // independently so narrowing a resource to a smaller interface here never
 // requires changes anywhere upstream of this constructor.
-func New(store storage.Storage) API {
-	return API{collections: store}
+func New(store storage.Storage, config config.Config) API {
+	return API{collections: store, config: config}
 }
 
 // slugify derives a URL-safe slug from a collection name: lowercased, with

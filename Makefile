@@ -82,7 +82,7 @@ $(STATIC_STAMP): $(FRONTEND_SOURCES) frontend/node_modules
 $(PROJECT_NAME): $(SERVER_SOURCES) $(API_TYPES_FILE) $(STATIC_STAMP)
 	@echo "Compiling $(PROJECT_NAME)..."
 	@CGO_ENABLED=0 go build \
-		-ldflags "-X main.version=$(PROJECT_VERSION)" \
+		-ldflags "-X github.com/aztechian/heirloom/internal/config.Version=$(PROJECT_VERSION)" \
 		-o $(PROJECT_NAME) ./cmd/server
 
 lint: $(API_TYPES_FILE)
