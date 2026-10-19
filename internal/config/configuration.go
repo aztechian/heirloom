@@ -8,18 +8,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-// VERSION is set at build time via -ldflags, so it must be a package-level
-// variable rather than a const or a value threaded through the call stack.
-//
-//nolint:gochecknoglobals // set from a build-time -ldflags value
-var VERSION = "dev"
-
 type ServerConfig struct {
-	Port         string `mapstructure:"port"`
-	LogLevel     string `mapstructure:"log_level"`
-	ReadTimeout  int    `mapstructure:"read_timeout"`
-	WriteTimeout int    `mapstructure:"write_timeout"`
-	DataPath     string `mapstructure:"data_path"`
+	Port             string `mapstructure:"port"`
+	LogLevel         string `mapstructure:"log_level"`
+	ReadTimeout      int    `mapstructure:"read_timeout"`
+	WriteTimeout     int    `mapstructure:"write_timeout"`
+	DataPath         string `mapstructure:"data_path"`
+	MaxAssetsBytes   int    `mapstructure:"max_assets_bytes"`
+	AllowedMimeTypes string `mapstructure:"allowed_mime_types"`
 }
 
 type S3Config struct {
@@ -31,8 +27,9 @@ type S3Config struct {
 }
 
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
-	S3     S3Config     `mapstructure:"s3"`
+	Version string       `mapstructure:"version"`
+	Server  ServerConfig `mapstructure:"server"`
+	S3      S3Config     `mapstructure:"s3"`
 }
 
 func LoadConfig() (*Config, error) {

@@ -6,11 +6,12 @@ import (
 
 	static "github.com/aztechian/heirloom"
 	"github.com/aztechian/heirloom/internal/api/types"
+	"github.com/aztechian/heirloom/internal/config"
 	"github.com/aztechian/heirloom/internal/server/handlers"
 	"github.com/aztechian/heirloom/internal/storage"
 )
 
-func applyRoutes(mux *http.ServeMux, store storage.Storage) {
+func applyRoutes(mux *http.ServeMux, store storage.Storage, config config.Config) {
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("GET /openapi.json", openapiSpec)
 	mux.Handle("GET /docs/", http.StripPrefix("/docs", swaggerUI()))
@@ -26,7 +27,7 @@ func applyRoutes(mux *http.ServeMux, store storage.Storage) {
 	// it never gets a chance to reject requests for /healthz, /docs, or the
 	// static frontend, none of which the spec describes.
 	apiMux := http.NewServeMux()
-	types.HandlerFromMux(types.NewStrictHandler(handlers.New(store), nil), apiMux)
+	types.HandlerFromMux(types.NewStrictHandler(handlers.New(store, config), nil), apiMux)
 	mux.Handle("/api/v1/", requestValidation(spec)(apiMux))
 
 	mux.Handle("/", static.FileServer())

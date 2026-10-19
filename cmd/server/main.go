@@ -60,7 +60,7 @@ func main() {
 
 	// Create server, and start in a go routine
 	go func() {
-		log.Info().Str("address", srv.Addr).Msg("Starting server")
+		log.Info().Str("address", srv.Addr).Str("version", config.Version).Msg("Starting server")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error().Err(err).Msg("Server failed to start")
 		}
