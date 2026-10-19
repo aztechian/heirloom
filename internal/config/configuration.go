@@ -8,12 +8,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// VERSION is set at build time via -ldflags, so it must be a package-level
-// variable rather than a const or a value threaded through the call stack.
-//
-//nolint:gochecknoglobals // set from a build-time -ldflags value
-var VERSION = "dev"
-
 type ServerConfig struct {
 	Port             string `mapstructure:"port"`
 	LogLevel         string `mapstructure:"log_level"`

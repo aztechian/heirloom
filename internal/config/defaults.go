@@ -16,7 +16,7 @@ const (
 )
 
 func setDefaults() {
-	viper.SetDefault("version", Version) // set default version from build-time variable
+	viper.SetDefault("version", version) // set default version from build-time variable
 	viper.SetDefault("server.log_level", "info")
 	viper.SetDefault("server.port", DefaultPort)
 	viper.SetDefault("server.read_timeout", DefaultReadTimeout)
